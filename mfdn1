@@ -1,0 +1,102 @@
+import keras
+from keras.regularizers import l2
+import numpy as np
+
+def dense_block(n, x, growth_rate):
+	for i in range(n):
+		m = keras.layers.BatchNormalization(axis=-1)(x)
+		m = keras.layers.Activation('relu')(m)
+		b = keras.layers.Conv2D(filters=growth_rate, kernel_size=3, strides=1, padding='same', kernel_initializer='he_uniform',
+			kernel_regularizer=l2(0))(m)
+		x = keras.layers.concatenate([x,b], axis=-1)
+	return x
+
+def transition_down(x):
+	x = keras.layers.BatchNormalization(axis=-1)(x)
+	x = keras.layers.Activation('relu')(x)
+	x = keras.layers.Conv2D(filters=x.get_shape().as_list()[-1], kernel_size=1, strides=2, padding='same', kernel_initializer='he_uniform',
+		kernel_regularizer=l2(0))(x)
+	return x
+
+def transition_up(x):
+	_,r,c,ch = x.get_shape().as_list()
+	x = keras.layers.Conv2DTranspose(ch, (3, 3), strides=(2,2), kernel_initializer='he_uniform',
+						padding='same', kernel_regularizer=l2(0))(x)
+	return x
+
+input1 = keras.layers.Input(shape=(480, 640, 3), name='input1')
+input2 = keras.layers.Input(shape=(480, 640, 3), name='input2')
+x1 = keras.layers.BatchNormalization(axis=-1)(input1)
+x2 = keras.layers.BatchNormalization(axis=-1)(input2)
+x1 = keras.layers.Conv2D(filters=48, kernel_size=3, strides=1, padding='same', kernel_initializer='he_uniform',
+			kernel_regularizer=l2(0))(input1)
+x2 = keras.layers.Conv2D(filters=48, kernel_size=3, strides=1, padding='same', kernel_initializer='he_uniform',
+			kernel_regularizer=l2(0))(input2)
+c1 = keras.layers.concatenate([x1,x2], axis=-1)
+db1 = dense_block(4, x1, 16)
+db2 = dense_block(4, x2, 16)
+x1 = keras.layers.concatenate([c1,db1], axis=-1)
+x2 = keras.layers.concatenate([c1,db2], axis=-1)
+x1 = transition_down(x1)
+x2 = transition_down(x2)
+x1 = keras.layers.Conv2D(filters=20, kernel_size=1, strides=1, padding='same', kernel_initializer='he_uniform', 
+	kernel_regularizer=l2(0))(x1)
+x2 = keras.layers.Conv2D(filters=20, kernel_size=1, strides=1, padding='same', kernel_initializer='he_uniform', 
+	kernel_regularizer=l2(0))(x2)
+c2 = keras.layers.concatenate([x1,x2], axis=-1)
+db1 = dense_block(4, x1, 16)
+db2 = dense_block(4, x2, 16)
+x1 = keras.layers.concatenate([c2,db1], axis=-1)
+x2 = keras.layers.concatenate([c2,db2], axis=-1)
+x1 = transition_down(x1)
+x2 = transition_down(x2)
+x1 = keras.layers.Conv2D(filters=20, kernel_size=1, strides=1, padding='same', kernel_initializer='he_uniform', 
+	kernel_regularizer=l2(0))(x1)
+x2 = keras.layers.Conv2D(filters=20, kernel_size=1, strides=1, padding='same', kernel_initializer='he_uniform', 
+	kernel_regularizer=l2(0))(x2)
+c3 = keras.layers.concatenate([x1,x2], axis=-1)
+db1 = dense_block(4, x1, 16)
+db2 = dense_block(4, x2, 16)
+x1 = keras.layers.concatenate([c3,db1], axis=-1)
+x2 = keras.layers.concatenate([c3,db2], axis=-1)
+x1 = keras.layers.Conv2D(filters=20, kernel_size=1, strides=1, padding='same', kernel_initializer='he_uniform', 
+	kernel_regularizer=l2(0))(x1)
+x2 = keras.layers.Conv2D(filters=20, kernel_size=1, strides=1, padding='same', kernel_initializer='he_uniform', 
+	kernel_regularizer=l2(0))(x2)
+x1 = transition_up(db1)
+x2 = transition_up(db2)
+db1 = dense_block(4, x1, 16)
+db2 = dense_block(4, x2, 16)
+x1 = keras.layers.concatenate([c2,x1], axis=-1)
+x2 = keras.layers.concatenate([c2,x2], axis=-1)
+x1 = keras.layers.Conv2D(filters=20, kernel_size=1, strides=1, padding='same', kernel_initializer='he_uniform', 
+	kernel_regularizer=l2(0))(x1)
+x2 = keras.layers.Conv2D(filters=20, kernel_size=1, strides=1, padding='same', kernel_initializer='he_uniform', 
+	kernel_regularizer=l2(0))(x2)
+x1 = transition_up(db1)
+x2 = transition_up(db2)
+# db1 = dense_block(4, x1, 16)
+# db2 = dense_block(4, x2, 16)
+# x1 = keras.layers.concatenate([c1,x1], axis=-1)
+# x2 = keras.layers.concatenate([c1,x2], axis=-1)
+# x1 = keras.layers.Conv2D(filters=20, kernel_size=1, strides=1, padding='same', kernel_initializer='he_uniform', 
+	# kernel_regularizer=l2(0))(x1)
+# x2 = keras.layers.Conv2D(filters=20, kernel_size=1, strides=1, padding='same', kernel_initializer='he_uniform', 
+	# kernel_regularizer=l2(0))(x2)
+out = keras.layers.concatenate([x1,x2], axis=-1)
+out = keras.layers.Conv2D(filters=40, kernel_size=3, strides=1, padding='same', kernel_initializer='he_uniform',
+			kernel_regularizer=l2(0))(out)
+out = keras.layers.Activation('softmax')(out)
+model = keras.models.Model(inputs=[input1,input2], outputs=out)
+model.compile(optimizer='rmsprop', loss='categorical_crossentropy')
+
+img = np.load('E:/nyud/data/n_imgmap.npy')
+dep = np.load('E:/nyud/data/n_depmap.npy')
+lab = np.load('E:/nyud/data/n_labmap.npy')
+
+
+model.fit([img,dep],lab,epochs=30,batch_size=1)
+model.save('mymodel.h5')
+
+
+
